@@ -11,8 +11,8 @@
 	<groupId>com.hadee</groupId>
 	<artifactId>crowdfunding-platform</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name/>
-	<description/>
+	<name>GiveLives</name>
+<description>GiveLives: crowdfunding platform with goal, deadline and automatic refund logic</description>
 	<url/>
 	<licenses>
 		<license/>
@@ -48,10 +48,10 @@
 		</dependency>
 
 		<dependency>
-			<groupId>org.postgresql</groupId>
-			<artifactId>postgresql</artifactId>
-			<scope>runtime</scope>
-		</dependency>
+    <groupId>com.microsoft.sqlserver</groupId>
+    <artifactId>mssql-jdbc</artifactId>
+    <scope>runtime</scope>
+        </dependency>
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
