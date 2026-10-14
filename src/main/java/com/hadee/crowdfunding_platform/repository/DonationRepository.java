@@ -1,0 +1,19 @@
+package com.hadee.crowdfunding_platform.repository;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import com.hadee.crowdfunding_platform.entity.Donation;
+import com.hadee.crowdfunding_platform.entity.enums.DonationStatus;
+
+public interface DonationRepository extends JpaRepository<Donation, Long> {
+
+    List<Donation> findByDonorId(Long donorId);
+
+    List<Donation> findByCampaignIdAndStatus(Long campaignId, DonationStatus status);
+
+    // used later by the scheduled job that cleans up old PENDING donations
+    List<Donation> findByStatusAndCreatedAtBefore(DonationStatus status, LocalDateTime time);
+}

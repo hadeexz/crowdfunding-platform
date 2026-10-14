@@ -1,0 +1,6 @@
+package com.hadee.crowdfunding_platform.entity.enums;
+
+public enum AdminActionType{
+     BAN_USER, UNBAN_USER, SUSPEND_CAMPAIGN, UNSUSPEND_CAMPAIGN, APPROVE_CAMPAIGN_REFUND,
+    APPROVE_KYC, REJECT_KYC, APPROVE_PAYOUT, REJECT_PAYOUT, RELEASE_PAYOUT
+}
