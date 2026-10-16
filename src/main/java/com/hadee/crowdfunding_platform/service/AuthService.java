@@ -4,30 +4,37 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.hadee.crowdfunding_platform.dto.LoginRequest;
+import com.hadee.crowdfunding_platform.dto.LoginResponse;
 import com.hadee.crowdfunding_platform.dto.RegisterRequest;
 import com.hadee.crowdfunding_platform.dto.UserResponse;
 import com.hadee.crowdfunding_platform.entity.User;
 import com.hadee.crowdfunding_platform.entity.enums.AccountType;
 import com.hadee.crowdfunding_platform.entity.enums.Role;
 import com.hadee.crowdfunding_platform.entity.enums.VerificationStatus;
+import com.hadee.crowdfunding_platform.exception.AccountBannedException;
 import com.hadee.crowdfunding_platform.exception.EmailAlreadyExistsException;
+import com.hadee.crowdfunding_platform.exception.InvalidCredentialsException;
 import com.hadee.crowdfunding_platform.repository.UserRepository;
-
 
 @Service
 public class AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public AuthService(UserRepository userRepository,
+                       PasswordEncoder passwordEncoder,
+                       JwtService jwtService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
     }
 
     @Transactional
     public UserResponse register(RegisterRequest request) {
-        
+
         // Public signup is only for donor, creator, organization (never admin)
         if ("ADMIN".equals(request.accountType().name())) {
             throw new IllegalArgumentException("This account type cannot be registered publicly");
@@ -54,13 +61,43 @@ public class AuthService {
         }
 
         User saved = userRepository.save(user);
+        return toResponse(saved);
+    }
 
+    @Transactional(readOnly = true)
+    public LoginResponse login(LoginRequest request) {
+
+        String email = request.email().trim().toLowerCase();
+
+        // Same message for "no such email" and "wrong password"
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new InvalidCredentialsException("Invalid email or password"));
+
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw new InvalidCredentialsException("Invalid email or password");
+        }
+
+        // Ban is checked only AFTER the password is proven correct
+        if (user.isBanned()) {
+            throw new AccountBannedException("This account has been suspended");
+        }
+
+        String token = jwtService.generateToken(user);
+
+        return new LoginResponse(
+                token,
+                "Bearer",
+                jwtService.getExpirationSeconds(),
+                toResponse(user));
+    }
+
+    private UserResponse toResponse(User user) {
         return new UserResponse(
-                saved.getId(),
-                saved.getFullName(),
-                saved.getEmail(),
-                saved.getAccountType(),
-                saved.getRole(),
-                saved.getVerificationStatus());
+                user.getId(),
+                user.getFullName(),
+                user.getEmail(),
+                user.getAccountType(),
+                user.getRole(),
+                user.getVerificationStatus());
     }
 }
