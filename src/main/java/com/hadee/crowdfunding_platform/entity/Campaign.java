@@ -48,6 +48,10 @@ public class Campaign {
     @Column(nullable = false, length = Length.LONG32)
     private String description;
 
+    @Nationalized
+    @Column(name = "image_url", length = 500)
+    private String imageUrl;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private CampaignCategory category;
@@ -87,4 +91,6 @@ public class Campaign {
 
     @Column(name = "updated_at", insertable = false, updatable = false)
     private LocalDateTime updatedAt;
+
+
 }

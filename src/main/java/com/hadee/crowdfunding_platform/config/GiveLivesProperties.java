@@ -19,4 +19,10 @@ public class GiveLivesProperties {
 
     @Value("${givelives.payout-review-threshold}")
     private BigDecimal payoutReviewThreshold;
+
+    @Value("${givelives.campaign-min-days}")
+    private int campaignMinDays;
+
+    @Value("${givelives.campaign-max-days}")
+    private int campaignMaxDays;
 }

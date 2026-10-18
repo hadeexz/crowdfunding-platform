@@ -36,3 +36,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Logs and VS Code Code Runner leftovers
+*.log
+tempCodeRunnerFile.java
