@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -48,6 +49,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleBadRequest(IllegalArgumentException ex) {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        return build(HttpStatus.BAD_REQUEST, "Invalid value for '" + ex.getName() + "'");
+    }
+    
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {

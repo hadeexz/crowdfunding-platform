@@ -1,6 +1,7 @@
 package com.hadee.crowdfunding_platform.service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
@@ -94,6 +95,29 @@ public class CampaignService {
         return toResponse(saved);
     }
 
+    // viewerId is null for anonymous visitors
+    @Transactional(readOnly = true)
+    public CampaignResponse getById(Long campaignId, Long viewerId, boolean viewerIsAdmin) {
+
+        Campaign campaign = campaignRepository.findByIdWithCreator(campaignId)
+                .orElseThrow(() -> new ResourceNotFoundException("Campaign not found"));
+
+        // DRAFT and SUSPENDED campaigns are visible only to the owner and admins.
+        // Everyone else gets "not found", so we don't even confirm they exist.
+        boolean hiddenFromPublic = campaign.getStatus() == CampaignStatus.DRAFT
+                || campaign.getStatus() == CampaignStatus.SUSPENDED;
+
+        if (hiddenFromPublic) {
+            boolean isOwner = viewerId != null
+                    && viewerId.equals(campaign.getCreator().getId());
+            if (!isOwner && !viewerIsAdmin) {
+                throw new ResourceNotFoundException("Campaign not found");
+            }
+        }
+
+        return toResponse(campaign);
+    }
+
     private CampaignResponse toResponse(Campaign c) {
         User creator = c.getCreator();
         return new CampaignResponse(
@@ -108,6 +132,30 @@ public class CampaignService {
                 c.getCurrentAmount(),
                 c.getStatus(),
                 c.getStartDate(),
-                c.getDeadline());
+                c.getDeadline(),
+                calculateProgress(c.getCurrentAmount(), c.getGoalAmount()),
+                c.getGoalAmount().subtract(c.getCurrentAmount()).max(BigDecimal.ZERO),
+                calculateDaysLeft(c));
+    }
+
+    // current / goal * 100, 2 decimals, rounded DOWN so 99.999% never shows as 100%
+    private BigDecimal calculateProgress(BigDecimal current, BigDecimal goal) {
+        if (goal.signum() <= 0) {
+            return BigDecimal.ZERO.setScale(2);
+        }
+        return current.multiply(BigDecimal.valueOf(100))
+                .divide(goal, 2, RoundingMode.DOWN);
+    }
+
+    // Rounded UP: 1 minute left still counts as "1 day left". 0 once not running.
+    private long calculateDaysLeft(Campaign c) {
+        boolean running = c.getStatus() == CampaignStatus.ACTIVE
+                || c.getStatus() == CampaignStatus.GOAL_REACHED;
+        if (!running) {
+            return 0;
+        }
+        long minutes = ChronoUnit.MINUTES.between(
+                LocalDateTime.now(ZoneOffset.UTC), c.getDeadline());
+        return minutes <= 0 ? 0 : (minutes + 1439) / 1440;
     }
 }

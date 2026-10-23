@@ -18,5 +18,8 @@ public record CampaignResponse(
         BigDecimal currentAmount,
         CampaignStatus status,
         LocalDateTime startDate,
-        LocalDateTime deadline
+        LocalDateTime deadline,
+        BigDecimal progressPercent,
+        BigDecimal remainingAmount,
+        long daysLeft
 ) {}

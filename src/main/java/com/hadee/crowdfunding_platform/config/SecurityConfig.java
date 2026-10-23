@@ -33,11 +33,19 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                .authorizeHttpRequests(auth -> auth
+                                .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST,
                                 "/api/auth/register",
                                 "/api/auth/login").permitAll()
                         .requestMatchers("/error").permitAll()
+
+                        // Public viewing of campaigns. "my" is listed FIRST so it stays
+                        // private: Spring uses the first rule that matches.
+                        .requestMatchers(HttpMethod.GET, "/api/campaigns/my").authenticated()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/campaigns",
+                                "/api/campaigns/*").permitAll()
+
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
 
