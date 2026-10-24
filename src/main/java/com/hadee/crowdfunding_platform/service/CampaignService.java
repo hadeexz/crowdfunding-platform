@@ -6,24 +6,36 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.hadee.crowdfunding_platform.config.GiveLivesProperties;
 import com.hadee.crowdfunding_platform.dto.CampaignResponse;
+import com.hadee.crowdfunding_platform.dto.CampaignSummaryResponse;
 import com.hadee.crowdfunding_platform.dto.CreateCampaignRequest;
+import com.hadee.crowdfunding_platform.dto.PageResponse;
 import com.hadee.crowdfunding_platform.entity.Campaign;
 import com.hadee.crowdfunding_platform.entity.User;
 import com.hadee.crowdfunding_platform.entity.enums.AccountType;
+import com.hadee.crowdfunding_platform.entity.enums.CampaignCategory;
 import com.hadee.crowdfunding_platform.entity.enums.CampaignStatus;
 import com.hadee.crowdfunding_platform.entity.enums.VerificationStatus;
 import com.hadee.crowdfunding_platform.exception.ForbiddenActionException;
 import com.hadee.crowdfunding_platform.exception.ResourceNotFoundException;
 import com.hadee.crowdfunding_platform.repository.CampaignRepository;
+import com.hadee.crowdfunding_platform.repository.CampaignSpecifications;
 import com.hadee.crowdfunding_platform.repository.UserRepository;
 
 @Service
 public class CampaignService {
+
+    private static final int MAX_PAGE_SIZE = 50;
+    private static final int MAX_SEARCH_LENGTH = 100;
 
     private final CampaignRepository campaignRepository;
     private final UserRepository userRepository;
@@ -37,6 +49,9 @@ public class CampaignService {
         this.properties = properties;
     }
 
+    // ------------------------------------------------------------------
+    // CREATE (Part 4)
+    // ------------------------------------------------------------------
     @Transactional
     public CampaignResponse create(Long userId, CreateCampaignRequest request) {
 
@@ -95,7 +110,9 @@ public class CampaignService {
         return toResponse(saved);
     }
 
-    // viewerId is null for anonymous visitors
+    // ------------------------------------------------------------------
+    // VIEW ONE (Part 5). viewerId is null for anonymous visitors.
+    // ------------------------------------------------------------------
     @Transactional(readOnly = true)
     public CampaignResponse getById(Long campaignId, Long viewerId, boolean viewerIsAdmin) {
 
@@ -118,6 +135,100 @@ public class CampaignService {
         return toResponse(campaign);
     }
 
+    // ------------------------------------------------------------------
+    // PUBLIC BROWSE LIST (Part 6)
+    // ------------------------------------------------------------------
+    @Transactional(readOnly = true)
+    public PageResponse<CampaignSummaryResponse> list(CampaignCategory category,
+                                                      CampaignStatus status,
+                                                      String q,
+                                                      String sort,
+                                                      int page,
+                                                      int size) {
+        validatePaging(page, size);
+
+        // No status given means "live campaigns"
+        CampaignStatus effectiveStatus = (status == null) ? CampaignStatus.ACTIVE : status;
+
+        // The public list never shows DRAFT or SUSPENDED campaigns
+        if (effectiveStatus == CampaignStatus.DRAFT
+                || effectiveStatus == CampaignStatus.SUSPENDED) {
+            throw new IllegalArgumentException(
+                    "This status is not available for public browsing");
+        }
+
+        // Start with the always-on block, then add only what the visitor asked for
+        Specification<Campaign> spec = CampaignSpecifications.hasStatus(effectiveStatus);
+
+        // Until the deadline scheduler exists, hide "ACTIVE" campaigns that already expired
+        if (effectiveStatus == CampaignStatus.ACTIVE) {
+            spec = spec.and(CampaignSpecifications.deadlineAfter(LocalDateTime.now(ZoneOffset.UTC)));
+        }
+        if (category != null) {
+            spec = spec.and(CampaignSpecifications.hasCategory(category));
+        }
+        if (q != null && !q.isBlank()) {
+            if (q.length() > MAX_SEARCH_LENGTH) {
+                throw new IllegalArgumentException(
+                        "Search text must be at most " + MAX_SEARCH_LENGTH + " characters");
+            }
+            spec = spec.and(CampaignSpecifications.titleContains(q.trim()));
+        }
+
+        Pageable pageable = PageRequest.of(page, size, toSort(sort));
+        Page<Campaign> result = campaignRepository.findAll(spec, pageable);
+
+        return PageResponse.from(result.map(this::toSummary));
+    }
+
+    // ------------------------------------------------------------------
+    // MY CAMPAIGNS (Part 6): every status, only the logged-in user's own
+    // ------------------------------------------------------------------
+    @Transactional(readOnly = true)
+    public PageResponse<CampaignSummaryResponse> listMine(Long userId,
+                                                          CampaignStatus status,
+                                                          int page,
+                                                          int size) {
+        validatePaging(page, size);
+
+        Specification<Campaign> spec = CampaignSpecifications.byCreator(userId);
+        if (status != null) {
+            spec = spec.and(CampaignSpecifications.hasStatus(status));
+        }
+
+        // Newest created first; id breaks ties so paging stays stable
+        Pageable pageable = PageRequest.of(page, size,
+                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
+        Page<Campaign> result = campaignRepository.findAll(spec, pageable);
+
+        return PageResponse.from(result.map(this::toSummary));
+    }
+
+    // ------------------------------------------------------------------
+    // Helpers
+    // ------------------------------------------------------------------
+    private void validatePaging(int page, int size) {
+        if (page < 0) {
+            throw new IllegalArgumentException("Page must be 0 or more");
+        }
+        if (size < 1 || size > MAX_PAGE_SIZE) {
+            throw new IllegalArgumentException(
+                    "Size must be between 1 and " + MAX_PAGE_SIZE);
+        }
+    }
+
+    // Every sort ends with id, so equal values always come in the same order
+    private Sort toSort(String sort) {
+        String s = (sort == null) ? "newest" : sort.trim().toLowerCase();
+        return switch (s) {
+            case "newest" -> Sort.by(Sort.Order.desc("startDate"), Sort.Order.desc("id"));
+            case "ending-soon" -> Sort.by(Sort.Order.asc("deadline"), Sort.Order.desc("id"));
+            case "most-funded" -> Sort.by(Sort.Order.desc("currentAmount"), Sort.Order.desc("id"));
+            default -> throw new IllegalArgumentException(
+                    "Sort must be one of: newest, ending-soon, most-funded");
+        };
+    }
+
     private CampaignResponse toResponse(Campaign c) {
         User creator = c.getCreator();
         return new CampaignResponse(
@@ -135,6 +246,21 @@ public class CampaignService {
                 c.getDeadline(),
                 calculateProgress(c.getCurrentAmount(), c.getGoalAmount()),
                 c.getGoalAmount().subtract(c.getCurrentAmount()).max(BigDecimal.ZERO),
+                calculateDaysLeft(c));
+    }
+
+    private CampaignSummaryResponse toSummary(Campaign c) {
+        return new CampaignSummaryResponse(
+                c.getId(),
+                c.getTitle(),
+                c.getImageUrl(),
+                c.getCategory(),
+                c.getCreator().getFullName(),
+                c.getGoalAmount(),
+                c.getCurrentAmount(),
+                calculateProgress(c.getCurrentAmount(), c.getGoalAmount()),
+                c.getStatus(),
+                c.getDeadline(),
                 calculateDaysLeft(c));
     }
 
