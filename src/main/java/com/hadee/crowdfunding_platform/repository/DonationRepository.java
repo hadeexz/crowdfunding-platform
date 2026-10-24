@@ -1,6 +1,7 @@
 package com.hadee.crowdfunding_platform.repository;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -16,4 +17,7 @@ public interface DonationRepository extends JpaRepository<Donation, Long> {
 
     // used later by the scheduled job that cleans up old PENDING donations
     List<Donation> findByStatusAndCreatedAtBefore(DonationStatus status, LocalDateTime time);
+
+    // "Has anyone really donated to this campaign?" (used by the edit rules)
+    boolean existsByCampaignIdAndStatusIn(Long campaignId, Collection<DonationStatus> statuses);
 }

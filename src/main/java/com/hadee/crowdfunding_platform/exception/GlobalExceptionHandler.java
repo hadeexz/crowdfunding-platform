@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -33,6 +34,13 @@ public class GlobalExceptionHandler {
         @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(ResourceNotFoundException ex) {
         return build(HttpStatus.NOT_FOUND, ex.getMessage());
+    }
+
+        @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<Map<String, Object>> handleOptimisticLock(
+            ObjectOptimisticLockingFailureException ex) {
+        return build(HttpStatus.CONFLICT,
+                "This record was just changed by someone else. Please reload and try again.");
     }
 
     @ExceptionHandler(ConflictException.class)

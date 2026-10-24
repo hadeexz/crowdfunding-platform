@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -19,16 +20,20 @@ import com.hadee.crowdfunding_platform.dto.CampaignResponse;
 import com.hadee.crowdfunding_platform.dto.CampaignSummaryResponse;
 import com.hadee.crowdfunding_platform.dto.CreateCampaignRequest;
 import com.hadee.crowdfunding_platform.dto.PageResponse;
+import com.hadee.crowdfunding_platform.dto.UpdateCampaignRequest;
 import com.hadee.crowdfunding_platform.entity.Campaign;
 import com.hadee.crowdfunding_platform.entity.User;
 import com.hadee.crowdfunding_platform.entity.enums.AccountType;
 import com.hadee.crowdfunding_platform.entity.enums.CampaignCategory;
 import com.hadee.crowdfunding_platform.entity.enums.CampaignStatus;
+import com.hadee.crowdfunding_platform.entity.enums.DonationStatus;
 import com.hadee.crowdfunding_platform.entity.enums.VerificationStatus;
+import com.hadee.crowdfunding_platform.exception.ConflictException;
 import com.hadee.crowdfunding_platform.exception.ForbiddenActionException;
 import com.hadee.crowdfunding_platform.exception.ResourceNotFoundException;
 import com.hadee.crowdfunding_platform.repository.CampaignRepository;
 import com.hadee.crowdfunding_platform.repository.CampaignSpecifications;
+import com.hadee.crowdfunding_platform.repository.DonationRepository;
 import com.hadee.crowdfunding_platform.repository.UserRepository;
 
 @Service
@@ -39,13 +44,16 @@ public class CampaignService {
 
     private final CampaignRepository campaignRepository;
     private final UserRepository userRepository;
+    private final DonationRepository donationRepository;
     private final GiveLivesProperties properties;
 
     public CampaignService(CampaignRepository campaignRepository,
                            UserRepository userRepository,
+                           DonationRepository donationRepository,
                            GiveLivesProperties properties) {
         this.campaignRepository = campaignRepository;
         this.userRepository = userRepository;
+        this.donationRepository = donationRepository;
         this.properties = properties;
     }
 
@@ -202,6 +210,155 @@ public class CampaignService {
         Page<Campaign> result = campaignRepository.findAll(spec, pageable);
 
         return PageResponse.from(result.map(this::toSummary));
+    }
+
+    // ------------------------------------------------------------------
+    // EDIT (Part 7)
+    // ------------------------------------------------------------------
+    @Transactional
+    public CampaignResponse update(Long userId, Long campaignId, UpdateCampaignRequest request) {
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        Campaign campaign = campaignRepository.findByIdWithCreator(campaignId)
+                .orElseThrow(() -> new ResourceNotFoundException("Campaign not found"));
+
+        // 1. Only the owner may edit. Hidden campaigns look non-existent to others.
+        if (!campaign.getCreator().getId().equals(userId)) {
+            boolean hidden = campaign.getStatus() == CampaignStatus.DRAFT
+                    || campaign.getStatus() == CampaignStatus.SUSPENDED;
+            if (hidden) {
+                throw new ResourceNotFoundException("Campaign not found");
+            }
+            throw new ForbiddenActionException("You can only edit your own campaigns");
+        }
+
+        // 2. The owner must still be verified and not banned
+        if (user.getVerificationStatus() != VerificationStatus.VERIFIED) {
+            throw new ForbiddenActionException(
+                    "Your account must be verified to edit campaigns");
+        }
+        if (user.isBanned()) {
+            throw new ForbiddenActionException("This account has been suspended");
+        }
+
+        // 3. Only running campaigns can be edited
+        CampaignStatus status = campaign.getStatus();
+        if (status != CampaignStatus.ACTIVE && status != CampaignStatus.GOAL_REACHED) {
+            throw new ConflictException(
+                    "A campaign with status " + status + " can no longer be edited");
+        }
+
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        if (!campaign.getDeadline().isAfter(now)) {
+            throw new ConflictException("This campaign has already ended");
+        }
+
+        // 4. The request must change something
+        boolean nothingSent = request.title() == null
+                && request.description() == null
+                && request.imageUrl() == null
+                && request.category() == null
+                && request.goalAmount() == null
+                && request.durationDays() == null;
+        if (nothingSent) {
+            throw new IllegalArgumentException("Nothing to update. Send at least one field");
+        }
+
+        // 5. Have donations started? Then the strict rule applies.
+        boolean donationsStarted = campaign.getCurrentAmount().signum() > 0
+                || donationRepository.existsByCampaignIdAndStatusIn(
+                        campaignId, List.of(DonationStatus.COMPLETED, DonationStatus.REFUNDED));
+
+        if (donationsStarted) {
+            applyGoalIncreaseOnly(campaign, request);
+        } else {
+            applyFullEdit(campaign, request, now);
+        }
+
+        Campaign saved = campaignRepository.save(campaign);
+        return toResponse(saved);
+    }
+
+    // After the first donation: only a HIGHER goal is allowed
+    private void applyGoalIncreaseOnly(Campaign campaign, UpdateCampaignRequest r) {
+
+        boolean otherFieldsSent = r.title() != null
+                || r.description() != null
+                || r.imageUrl() != null
+                || r.category() != null
+                || r.durationDays() != null;
+        if (otherFieldsSent) {
+            throw new ConflictException(
+                    "Donations have started, so only the goal amount can be changed (and only increased)");
+        }
+
+        BigDecimal newGoal = r.goalAmount();
+        if (newGoal.compareTo(campaign.getGoalAmount()) <= 0) {
+            throw new IllegalArgumentException(
+                    "The new goal must be higher than the current goal of " + campaign.getGoalAmount());
+        }
+
+        campaign.setGoalAmount(newGoal);
+
+        // There is room for donations again, so a "goal reached" campaign reopens
+        if (campaign.getStatus() == CampaignStatus.GOAL_REACHED) {
+            campaign.setStatus(CampaignStatus.ACTIVE);
+        }
+    }
+
+    // Before any donation: every editable field may change
+    private void applyFullEdit(Campaign campaign, UpdateCampaignRequest r, LocalDateTime now) {
+
+        if (r.title() != null) {
+            String title = r.title().trim();
+            if (title.isEmpty()) {
+                throw new IllegalArgumentException("Title cannot be blank");
+            }
+            campaign.setTitle(title);
+        }
+
+        if (r.description() != null) {
+            String description = r.description().trim();
+            if (description.length() < 20) {
+                throw new IllegalArgumentException(
+                        "Description must be at least 20 characters");
+            }
+            campaign.setDescription(description);
+        }
+
+        if (r.imageUrl() != null) {
+            campaign.setImageUrl(r.imageUrl().trim());
+        }
+
+        if (r.category() != null) {
+            campaign.setCategory(r.category());
+        }
+
+        if (r.goalAmount() != null) {
+            BigDecimal minGoal = properties.getMinCampaignGoal();
+            if (r.goalAmount().compareTo(minGoal) < 0) {
+                throw new IllegalArgumentException("Goal amount must be at least " + minGoal);
+            }
+            campaign.setGoalAmount(r.goalAmount());
+        }
+
+        if (r.durationDays() != null) {
+            int days = r.durationDays();
+            int minDays = properties.getCampaignMinDays();
+            int maxDays = properties.getCampaignMaxDays();
+            if (days < minDays || days > maxDays) {
+                throw new IllegalArgumentException(
+                        "Duration must be between " + minDays + " and " + maxDays + " days");
+            }
+            LocalDateTime newDeadline = campaign.getStartDate().plusDays(days);
+            if (!newDeadline.isAfter(now)) {
+                throw new IllegalArgumentException(
+                        "With " + days + " days from the start date, the deadline would already be in the past");
+            }
+            campaign.setDeadline(newDeadline);
+        }
     }
 
     // ------------------------------------------------------------------

@@ -4,6 +4,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,6 +16,7 @@ import com.hadee.crowdfunding_platform.dto.CampaignResponse;
 import com.hadee.crowdfunding_platform.dto.CampaignSummaryResponse;
 import com.hadee.crowdfunding_platform.dto.CreateCampaignRequest;
 import com.hadee.crowdfunding_platform.dto.PageResponse;
+import com.hadee.crowdfunding_platform.dto.UpdateCampaignRequest;
 import com.hadee.crowdfunding_platform.entity.enums.CampaignCategory;
 import com.hadee.crowdfunding_platform.entity.enums.CampaignStatus;
 import com.hadee.crowdfunding_platform.entity.enums.Role;
@@ -74,5 +76,14 @@ public class CampaignController {
         boolean viewerIsAdmin = principal != null && principal.role() == Role.ADMIN;
 
         return ResponseEntity.ok(campaignService.getById(id, viewerId, viewerIsAdmin));
+    }
+
+    // Owner only. Send just the fields you want to change.
+    @PatchMapping("/{id}")
+    public ResponseEntity<CampaignResponse> update(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody UpdateCampaignRequest request) {
+        return ResponseEntity.ok(campaignService.update(principal.id(), id, request));
     }
 }
