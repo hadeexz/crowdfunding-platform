@@ -25,4 +25,10 @@ public class GiveLivesProperties {
 
     @Value("${givelives.campaign-max-days}")
     private int campaignMaxDays;
+
+        @Value("${givelives.min-donation-amount}")
+    private BigDecimal minDonationAmount;
+
+    @Value("${givelives.pending-donation-expiry-minutes}")
+    private int pendingDonationExpiryMinutes;
 }
