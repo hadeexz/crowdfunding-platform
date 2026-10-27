@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GiveLives test checkout (dev only)</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 620px; margin: 24px auto; padding: 0 12px; }
+    label { display: block; margin-top: 12px; font-weight: bold; }
+    input[type=number], textarea { width: 100%; padding: 8px; box-sizing: border-box; }
+    textarea { height: 80px; }
+    button { margin: 16px 8px 0 0; padding: 10px 18px; font-size: 16px; cursor: pointer; }
+    pre { background: #f4f4f4; padding: 12px; white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <h2>GiveLives test checkout (dev only)</h2>
+
+  <label for="token">Login token (paste only the token, without the word Bearer)</label>
+  <textarea id="token"></textarea>
+
+  <label for="campaignId">Campaign id</label>
+  <input id="campaignId" type="number" min="1">
+
+  <label for="amount">Amount (INR)</label>
+  <input id="amount" type="number" min="1" step="0.01" value="100">
+
+  <label><input id="anonymous" type="checkbox"> Donate anonymously</label>
+
+  <button id="payBtn">Create order and pay</button>
+  <div id="mockBox"></div>
+
+  <h3>Log</h3>
+  <pre id="log"></pre>
+
+  <script src="https://checkout.razorpay.com/v1/checkout.js" onerror="void 0"></script>
+  <script>
+    const logEl = document.getElementById('log');
+    const mockBox = document.getElementById('mockBox');
+
+    function log(message, obj) {
+      logEl.textContent += message + (obj ? '\n' + JSON.stringify(obj, null, 2) : '') + '\n\n';
+    }
+
+    async function post(path, token, body) {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify(body)
+      });
+      let data = {};
+      try { data = await res.json(); } catch (e) { /* empty body */ }
+      return { status: res.status, data: data };
+    }
+
+    async function verify(token, orderId, paymentId, signature) {
+      const verified = await post('/api/donations/verify', token, {
+        razorpayOrderId: orderId,
+        razorpayPaymentId: paymentId,
+        razorpaySignature: signature
+      });
+      log('Verify -> HTTP ' + verified.status, verified.data);
+    }
+
+    // MOCK gateway: two buttons pretend to be the bank page
+    function showMockButtons(token, order) {
+      mockBox.textContent = '';
+      ['SUCCESS', 'FAILURE'].forEach(outcome => {
+        const btn = document.createElement('button');
+        btn.textContent = 'Simulate ' + outcome.toLowerCase();
+        btn.addEventListener('click', async () => {
+          mockBox.textContent = '';
+          const sim = await post('/api/mock-payments/pay', token,
+              { razorpayOrderId: order.razorpayOrderId, outcome: outcome });
+          log('Mock bank -> HTTP ' + sim.status, sim.data);
+          if (sim.status === 200 && sim.data.outcome === 'SUCCESS') {
+            await verify(token, sim.data.razorpayOrderId,
+                sim.data.razorpayPaymentId, sim.data.razorpaySignature);
+          }
+        });
+        mockBox.appendChild(btn);
+      });
+    }
+
+    // REAL Razorpay popup (only used when provider=razorpay)
+    function openRazorpay(token, order) {
+      const rzp = new Razorpay({
+        key: order.razorpayKeyId,
+        amount: Math.round(order.amount * 100),
+        currency: order.currency,
+        name: 'GiveLives',
+        description: 'Donation to campaign ' + order.campaignId,
+        order_id: order.razorpayOrderId,
+        handler: async function (response) {
+          log('Razorpay says paid', response);
+          await verify(token, response.razorpay_order_id,
+              response.razorpay_payment_id, response.razorpay_signature);
+        },
+        modal: { ondismiss: function () { log('Checkout window closed without paying.'); } },
+        theme: { color: '#2e7d32' }
+      });
+      rzp.on('payment.failed', function (response) { log('Payment failed', response.error); });
+      rzp.open();
+    }
+
+    document.getElementById('payBtn').addEventListener('click', async () => {
+      logEl.textContent = '';
+      mockBox.textContent = '';
+      const token = document.getElementById('token').value.trim();
+      const campaignId = Number(document.getElementById('campaignId').value);
+      const amount = Number(document.getElementById('amount').value);
+      const anonymous = document.getElementById('anonymous').checked;
+
+      if (!token || !campaignId || !amount) {
+        log('Please fill token, campaign id and amount.');
+        return;
+      }
+
+      const created = await post('/api/donations', token, { campaignId, amount, anonymous });
+      log('Create donation -> HTTP ' + created.status, created.data);
+      if (created.status !== 201) { return; }
+
+      const order = created.data;
+      if (order.provider === 'MOCK') {
+        showMockButtons(token, order);
+      } else {
+        openRazorpay(token, order);
+      }
+    });
+  </script>
+</body>
+</html>

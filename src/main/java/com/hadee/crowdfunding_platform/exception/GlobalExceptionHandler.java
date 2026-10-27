@@ -43,6 +43,11 @@ public class GlobalExceptionHandler {
                 "This record was just changed by someone else. Please reload and try again.");
     }
 
+        @ExceptionHandler(PaymentGatewayException.class)
+    public ResponseEntity<Map<String, Object>> handlePaymentGateway(PaymentGatewayException ex) {
+        return build(HttpStatus.BAD_GATEWAY, ex.getMessage());
+    }
+
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<Map<String, Object>> handleConflict(ConflictException ex) {
         return build(HttpStatus.CONFLICT, ex.getMessage());

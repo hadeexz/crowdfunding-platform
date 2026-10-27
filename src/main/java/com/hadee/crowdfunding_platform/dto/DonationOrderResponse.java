@@ -13,5 +13,6 @@ public record DonationOrderResponse(
         String currency,
         String razorpayOrderId,
         String razorpayKeyId,
+        String provider,
         DonationStatus status
 ) {}
