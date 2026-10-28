@@ -5,5 +5,6 @@ public record MockPaymentResponse(
         String razorpayPaymentId,
         String razorpaySignature,
         String outcome,
-        String message
+        String message,
+        String webhookEventId
 ) {}

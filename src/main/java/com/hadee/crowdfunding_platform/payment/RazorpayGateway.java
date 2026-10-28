@@ -57,8 +57,24 @@ public class RazorpayGateway implements PaymentGateway {
         }
     }
 
-    @Override
+        @Override
     public boolean verifyPaymentSignature(String orderId, String paymentId, String signature) {
+        if (!isConfigured(razorpayProperties.keySecret())) {
+            return false;
+        }
         return signatureVerifier.verifyPayment(orderId, paymentId, signature, razorpayProperties.keySecret());
+    }
+
+    @Override
+    public boolean verifyWebhookSignature(String rawBody, String signature) {
+        if (!isConfigured(razorpayProperties.webhookSecret())) {
+            return false;
+        }
+        return signatureVerifier.matches(rawBody, razorpayProperties.webhookSecret(), signature);
+    }
+
+    // The default placeholder "not-set..." is publicly known, so it must never act as a real secret.
+    private boolean isConfigured(String secret) {
+        return secret != null && !secret.isBlank() && !secret.startsWith("not-set");
     }
 }

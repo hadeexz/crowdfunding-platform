@@ -39,6 +39,9 @@ public class SecurityConfig {
                                 "/api/auth/login").permitAll()
                         .requestMatchers("/error").permitAll()
 
+                                                // Payment gateway calls this without a login token; the signature protects it
+                        .requestMatchers(HttpMethod.POST, "/api/webhooks/razorpay").permitAll()
+
                         // Public viewing of campaigns. "my" is listed FIRST so it stays
                         // private: Spring uses the first rule that matches.
                                                 // DEV ONLY test page: remove before deployment (Phase 8)

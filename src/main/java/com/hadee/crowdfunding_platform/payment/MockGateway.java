@@ -58,6 +58,21 @@ public class MockGateway implements PaymentGateway {
         return "pay_mock_" + randomPart();
     }
 
+        @Override
+    public boolean verifyWebhookSignature(String rawBody, String signature) {
+        return signatureVerifier.matches(rawBody, mockSecret, signature);
+    }
+
+    /** Mock only: signs a webhook body the way the real gateway would. */
+    public String signWebhook(String rawBody) {
+        return signatureVerifier.hmacSha256Hex(rawBody, mockSecret);
+    }
+
+    /** Mock only: a fake webhook event id. */
+    public String newEventId() {
+        return "evt_mock_" + randomPart();
+    }
+
     private String randomPart() {
         return UUID.randomUUID().toString().replace("-", "").substring(0, 20);
     }

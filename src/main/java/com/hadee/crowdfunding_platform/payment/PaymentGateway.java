@@ -15,4 +15,7 @@ public interface PaymentGateway {
 
     /** True only if the payment result really came from the gateway */
     boolean verifyPaymentSignature(String orderId, String paymentId, String signature);
+
+    /** True only if the webhook body was really signed by the gateway */
+    boolean verifyWebhookSignature(String rawBody, String signature);
 }
