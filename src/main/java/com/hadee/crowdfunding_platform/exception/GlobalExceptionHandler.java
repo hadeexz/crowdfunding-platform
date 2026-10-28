@@ -26,6 +26,11 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.UNAUTHORIZED, ex.getMessage());
     }
 
+    @ExceptionHandler(WebhookProcessingException.class)
+    public ResponseEntity<Map<String, Object>> handleWebhookProcessing(WebhookProcessingException ex) {
+        return build(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage());
+    }
+
     @ExceptionHandler(AccountBannedException.class)
     public ResponseEntity<Map<String, Object>> handleBanned(AccountBannedException ex) {
         return build(HttpStatus.FORBIDDEN, ex.getMessage());

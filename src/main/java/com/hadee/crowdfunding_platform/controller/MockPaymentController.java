@@ -41,6 +41,6 @@ public class MockPaymentController {
     public ResponseEntity<Map<String, String>> resend(
             @Valid @RequestBody MockResendRequest request) {
         boolean isNew = mockPaymentService.resendWebhook(request.eventId());
-        return ResponseEntity.ok(Map.of("status", isNew ? "received" : "duplicate"));
+                return ResponseEntity.ok(Map.of("status", isNew ? "processed" : "duplicate"));
     }
 }

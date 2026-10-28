@@ -1,6 +1,7 @@
 package com.hadee.crowdfunding_platform.service;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -8,6 +9,8 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import com.hadee.crowdfunding_platform.entity.WebhookEvent;
+import com.hadee.crowdfunding_platform.entity.enums.WebhookProcessingStatus;
+import com.hadee.crowdfunding_platform.exception.WebhookProcessingException;
 import com.hadee.crowdfunding_platform.payment.PaymentGateway;
 import com.hadee.crowdfunding_platform.repository.WebhookEventRepository;
 
@@ -23,10 +26,11 @@ public class WebhookService {
 
     private final WebhookEventRepository webhookEventRepository;
     private final PaymentGateway paymentGateway;
+    private final PaymentEventProcessor eventProcessor;
 
-    // NOT @Transactional: each repository call is its own small transaction, so a
-    // duplicate-key error cannot poison anything else.
-    /** Returns true if the event is new and was stored, false if it was a duplicate. */
+    // NOT @Transactional: storing, processing and marking a failure are separate small
+    // transactions, so a processing error can never undo the stored event.
+    /** Returns true if this call handled the event, false if it was a finished duplicate. */
     public boolean receive(byte[] body, String signature, String eventId) {
 
         if (body == null || body.length == 0) {
@@ -57,13 +61,22 @@ public class WebhookService {
             throw new IllegalArgumentException("Missing or invalid event type");
         }
 
-        // 2) Seen this event before? Then do nothing.
-        if (webhookEventRepository.existsByRazorpayEventId(eventId)) {
-            log.info("Duplicate webhook ignored: {}", eventId);
-            return false;
+        // 2) Seen this event before?
+        Optional<WebhookEvent> existing = webhookEventRepository.findByRazorpayEventId(eventId);
+        if (existing.isPresent()) {
+            WebhookEvent old = existing.get();
+            WebhookProcessingStatus status = old.getProcessingStatus();
+            if (status == WebhookProcessingStatus.PROCESSED || status == WebhookProcessingStatus.IGNORED) {
+                log.info("Duplicate webhook ignored: {}", eventId);
+                return false;
+            }
+            // RECEIVED or FAILED: the gateway is retrying, so try again
+            log.info("Retrying webhook {}", eventId);
+            processSafely(old.getId());
+            return true;
         }
 
-        // 3) Store it exactly as received (processing happens in Part 6)
+        // 3) Store it exactly as received
         WebhookEvent event = new WebhookEvent();
         event.setRazorpayEventId(eventId);
         event.setEventType(eventType);
@@ -74,7 +87,7 @@ public class WebhookService {
             webhookEventRepository.save(event);
         } catch (DataIntegrityViolationException e) {
             // two deliveries arrived at the same moment: the unique rule caught the second one
-            if (webhookEventRepository.existsByRazorpayEventId(eventId)) {
+            if (webhookEventRepository.findByRazorpayEventId(eventId).isPresent()) {
                 log.info("Duplicate webhook ignored (race): {}", eventId);
                 return false;
             }
@@ -82,6 +95,21 @@ public class WebhookService {
         }
 
         log.info("Webhook stored: {} ({})", eventId, eventType);
+
+        // 4) Act on it
+        processSafely(event.getId());
         return true;
+    }
+
+    private void processSafely(Long eventRowId) {
+        try {
+            eventProcessor.process(eventRowId);
+        } catch (RuntimeException e) {
+            log.error("Webhook processing failed for event row {}", eventRowId, e);
+            String detail = e.getClass().getSimpleName()
+                    + (e.getMessage() == null ? "" : ": " + e.getMessage());
+            eventProcessor.markFailed(eventRowId, detail);
+            throw new WebhookProcessingException("Webhook processing failed. It will be retried.");
+        }
     }
 }

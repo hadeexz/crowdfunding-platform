@@ -29,6 +29,6 @@ public class WebhookController {
             @RequestHeader(value = "X-Razorpay-Event-Id", required = false) String eventId) {
 
         boolean isNew = webhookService.receive(body, signature, eventId);
-        return ResponseEntity.ok(Map.of("status", isNew ? "received" : "duplicate"));
+                return ResponseEntity.ok(Map.of("status", isNew ? "processed" : "duplicate"));
     }
 }
