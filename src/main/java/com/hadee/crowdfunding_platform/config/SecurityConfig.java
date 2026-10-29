@@ -39,6 +39,12 @@ public class SecurityConfig {
                                 "/api/auth/login").permitAll()
                         .requestMatchers("/error").permitAll()
 
+
+                                                .requestMatchers(HttpMethod.GET,
+                                "/api/campaigns",
+                                "/api/campaigns/*",
+                                "/api/campaigns/*/donations").permitAll()
+
                                                 // Payment gateway calls this without a login token; the signature protects it
                         .requestMatchers(HttpMethod.POST, "/api/webhooks/razorpay").permitAll()
 

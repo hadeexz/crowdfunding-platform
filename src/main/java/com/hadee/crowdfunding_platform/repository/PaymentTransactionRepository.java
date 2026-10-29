@@ -12,9 +12,15 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
+import java.util.List;
+
 import com.hadee.crowdfunding_platform.entity.enums.PaymentStatus;
 
 public interface PaymentTransactionRepository extends JpaRepository<PaymentTransaction, Long> {
+
+        // One query for a whole page of donations
+    List<PaymentTransaction> findByDonationIdIn(Collection<Long> donationIds);
 
     Optional<PaymentTransaction> findByRazorpayOrderId(String razorpayOrderId);
 

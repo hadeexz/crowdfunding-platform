@@ -13,6 +13,10 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
+
 public interface DonationRepository extends JpaRepository<Donation, Long> {
 
     List<Donation> findByDonorId(Long donorId);
@@ -31,4 +35,15 @@ public interface DonationRepository extends JpaRepository<Donation, Long> {
     int changeStatusIfCurrent(@Param("id") Long id,
                               @Param("from") DonationStatus from,
                               @Param("to") DonationStatus to);
+
+                                  // "My donations": the campaign is loaded together with the page (no extra query per row)
+    @EntityGraph(attributePaths = "campaign")
+    Page<Donation> findPageByDonorId(Long donorId, Pageable pageable);
+
+    @EntityGraph(attributePaths = "campaign")
+    Page<Donation> findPageByDonorIdAndStatus(Long donorId, DonationStatus status, Pageable pageable);
+
+    // Campaign supporters: the donor is loaded together with the page
+    @EntityGraph(attributePaths = "donor")
+    Page<Donation> findPageByCampaignIdAndStatus(Long campaignId, DonationStatus status, Pageable pageable);
 }
