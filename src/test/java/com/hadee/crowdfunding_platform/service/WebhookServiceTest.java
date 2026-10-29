@@ -9,6 +9,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import static org.mockito.Mockito.times;
+
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+
+import com.hadee.crowdfunding_platform.entity.Campaign;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
@@ -152,5 +157,29 @@ class WebhookServiceTest {
 
         assertFalse(service.receive(body(), "good", "evt_1"));
         verify(processor, never()).process(any());
+    }
+
+        @Test
+    void concurrent_update_is_retried_and_then_succeeds() {
+        when(gateway.verifyWebhookSignature(BODY, "good")).thenReturn(true);
+        doThrow(new ObjectOptimisticLockingFailureException(Campaign.class, 1L))
+                .doThrow(new ObjectOptimisticLockingFailureException(Campaign.class, 1L))
+                .doNothing()
+                .when(processor).process(any());
+
+        assertTrue(service.receive(body(), "good", "evt_1"));
+        verify(processor, times(3)).process(any());
+        verify(processor, never()).markFailed(any(), any());
+    }
+
+    @Test
+    void concurrent_update_that_never_clears_marks_the_event_failed() {
+        when(gateway.verifyWebhookSignature(BODY, "good")).thenReturn(true);
+        doThrow(new ObjectOptimisticLockingFailureException(Campaign.class, 1L))
+                .when(processor).process(any());
+
+        assertThrows(WebhookProcessingException.class, () -> service.receive(body(), "good", "evt_1"));
+        verify(processor, times(3)).process(any());
+        verify(processor).markFailed(any(), contains("ObjectOptimisticLockingFailureException"));
     }
 }

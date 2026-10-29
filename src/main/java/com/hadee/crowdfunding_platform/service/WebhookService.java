@@ -3,6 +3,8 @@ package com.hadee.crowdfunding_platform.service;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
+import org.springframework.dao.ConcurrencyFailureException;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -23,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 public class WebhookService {
 
     private static final int MAX_BODY_BYTES = 200_000;
+    private static final int MAX_PROCESS_ATTEMPTS = 3;
 
     private final WebhookEventRepository webhookEventRepository;
     private final PaymentGateway paymentGateway;
@@ -101,15 +104,29 @@ public class WebhookService {
         return true;
     }
 
-    private void processSafely(Long eventRowId) {
-        try {
-            eventProcessor.process(eventRowId);
-        } catch (RuntimeException e) {
-            log.error("Webhook processing failed for event row {}", eventRowId, e);
-            String detail = e.getClass().getSimpleName()
-                    + (e.getMessage() == null ? "" : ": " + e.getMessage());
-            eventProcessor.markFailed(eventRowId, detail);
-            throw new WebhookProcessingException("Webhook processing failed. It will be retried.");
+        private void processSafely(Long eventRowId) {
+        RuntimeException lastError = null;
+
+        for (int attempt = 1; attempt <= MAX_PROCESS_ATTEMPTS; attempt++) {
+            try {
+                eventProcessor.process(eventRowId);
+                return;
+            } catch (ConcurrencyFailureException e) {
+                // Another payment changed the same campaign at the same moment.
+                // Nothing was saved, so reload everything and try again.
+                log.warn("Concurrent update while processing event row {} (attempt {})",
+                        eventRowId, attempt);
+                lastError = e;
+            } catch (RuntimeException e) {
+                lastError = e;
+                break;
+            }
         }
+
+        log.error("Webhook processing failed for event row {}", eventRowId, lastError);
+        String detail = lastError.getClass().getSimpleName()
+                + (lastError.getMessage() == null ? "" : ": " + lastError.getMessage());
+        eventProcessor.markFailed(eventRowId, detail);
+        throw new WebhookProcessingException("Webhook processing failed. It will be retried.");
     }
 }

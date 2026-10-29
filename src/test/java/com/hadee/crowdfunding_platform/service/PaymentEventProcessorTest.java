@@ -214,4 +214,20 @@ class PaymentEventProcessorTest {
 
         assertEquals(WebhookProcessingStatus.IGNORED, e.getProcessingStatus());
     }
+
+        @Test
+    void payment_after_the_pending_donation_expired_still_completes() {
+        PaymentTransaction tx = scenario("1000", "0", CampaignStatus.ACTIVE, 10, "300");
+        tx.setStatus(PaymentStatus.FAILED);
+        tx.setFailureReason("Payment not completed in time");
+        tx.getDonation().setStatus(DonationStatus.FAILED);
+        event("payment.captured", 30000);
+
+        processor.process(1L);
+
+        assertEquals(PaymentStatus.SUCCESS, tx.getStatus());
+        assertNull(tx.getFailureReason());
+        assertEquals(DonationStatus.COMPLETED, tx.getDonation().getStatus());
+        assertEquals(0, new BigDecimal("300").compareTo(tx.getDonation().getCampaign().getCurrentAmount()));
+    }
 }

@@ -8,6 +8,12 @@ import com.hadee.crowdfunding_platform.entity.PaymentTransaction;
 
 import org.springframework.data.jpa.repository.EntityGraph;
 
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import com.hadee.crowdfunding_platform.entity.enums.PaymentStatus;
+
 public interface PaymentTransactionRepository extends JpaRepository<PaymentTransaction, Long> {
 
     Optional<PaymentTransaction> findByRazorpayOrderId(String razorpayOrderId);
@@ -15,6 +21,16 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     Optional<PaymentTransaction> findByRazorpayPaymentId(String razorpayPaymentId);
 
     Optional<PaymentTransaction> findByDonationId(Long donationId);
+
+        boolean existsByDonationId(Long donationId);
+
+    @Modifying
+    @Query("update PaymentTransaction p set p.status = :to, p.failureReason = :reason "
+            + "where p.donation.id = :donationId and p.status = :from")
+    int changeStatusIfCurrent(@Param("donationId") Long donationId,
+                              @Param("from") PaymentStatus from,
+                              @Param("to") PaymentStatus to,
+                              @Param("reason") String reason);
 
         // Loads donation and donor in the same query (no lazy-loading problems outside a transaction)
     @EntityGraph(attributePaths = {"donation", "donation.donor"})
