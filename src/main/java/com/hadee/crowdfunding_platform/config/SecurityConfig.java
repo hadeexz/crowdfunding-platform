@@ -33,29 +33,26 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
-                                .authorizeHttpRequests(auth -> auth
+                                                .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST,
                                 "/api/auth/register",
                                 "/api/auth/login").permitAll()
                         .requestMatchers("/error").permitAll()
 
+                        // Payment gateway calls this without a login token; the signature protects it
+                        .requestMatchers(HttpMethod.POST, "/api/webhooks/razorpay").permitAll()
 
-                                                .requestMatchers(HttpMethod.GET,
+                        // DEV ONLY test page: remove before deployment
+                        .requestMatchers(HttpMethod.GET, "/checkout-test.html").permitAll()
+
+                        // "my" is listed FIRST so it stays private: Spring uses the first rule that matches.
+                        .requestMatchers(HttpMethod.GET, "/api/campaigns/my").authenticated()
+
+                        // Public viewing of campaigns and their supporters
+                        .requestMatchers(HttpMethod.GET,
                                 "/api/campaigns",
                                 "/api/campaigns/*",
                                 "/api/campaigns/*/donations").permitAll()
-
-                                                // Payment gateway calls this without a login token; the signature protects it
-                        .requestMatchers(HttpMethod.POST, "/api/webhooks/razorpay").permitAll()
-
-                        // Public viewing of campaigns. "my" is listed FIRST so it stays
-                        // private: Spring uses the first rule that matches.
-                                                // DEV ONLY test page: remove before deployment (Phase 8)
-                        .requestMatchers(HttpMethod.GET, "/checkout-test.html").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/campaigns/my").authenticated()
-                        .requestMatchers(HttpMethod.GET,
-                                "/api/campaigns",
-                                "/api/campaigns/*").permitAll()
 
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
